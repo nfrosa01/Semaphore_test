@@ -1,0 +1,2 @@
+username,realm,enabled,expire,name,groups,shell
+sa861839,pam,1,0,"Mike Dunigan","uas_network_team",/bin/bash
