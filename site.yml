@@ -1,0 +1,17 @@
+---
+- name: PAM (Linux) users on all Proxmox nodes
+  hosts: pve
+  become: true
+  gather_facts: false
+  roles:
+    - { role: users, tasks_from: pam.yml }
+
+- name: RBAC — users + groups + pools + ACLs
+  hosts: "{{ pve_rbac_node }}"
+  become: true
+  gather_facts: false
+  roles:
+    - { role: users,  tasks_from: pve_rbac.yml }
+    - { role: groups }
+    - { role: pools }
+    - { role: acls }
