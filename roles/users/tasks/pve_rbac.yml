@@ -1,0 +1,30 @@
+- name: Read CSV (users) for RBAC
+  ansible.builtin.read_csv:
+    path: "{{ users_csv_path }}"
+  register: users_csv
+
+- name: Add user to Proxmox RBAC (user@realm) with comment
+  ansible.builtin.command:
+    cmd: >-
+      pveum user add {{ item.username }}@{{ item.realm }}
+      --comment "{{ item.name | default('') }}"
+  loop: "{{ users_csv.list }}"
+  loop_control:
+    label: "{{ item.username }}@{{ item.realm }}"
+  register: add_user
+  changed_when: add_user.rc == 0
+  failed_when: add_user.rc not in [0,2]
+
+- name: Enable/disable + set expiry
+  ansible.builtin.command:
+    cmd: >-
+      pveum user modify {{ item.username }}@{{ item.realm }}
+      --enable {{ (item.enabled | default('1')) | int }}
+      --expire {{ (item.expire | default('0')) | int }}
+  loop: "{{ users_csv.list }}"
+  loop_control:
+    label: "{{ item.username }}@{{ item.realm }}"
+  register: mod_user
+  changed_when: mod_user.rc == 0
+  failed_when: mod_user.rc not in [0,2]
+``
