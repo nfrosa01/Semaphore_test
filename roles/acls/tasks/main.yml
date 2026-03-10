@@ -1,0 +1,21 @@
+- name: Read CSV (users)
+  ansible.builtin.read_csv:
+    path: "{{ users_csv_path }}"
+  register: users_csv
+
+- name: Apply ACL role on path for all CSV users (optional)
+  when: pve_acl_default.enabled | default(false)
+  ansible.builtin.command:
+    cmd: >-
+      pveum acl modify {{ pve_acl_default.path }}
+      --users {{
+        users_csv.list
+        | map(attribute='username')
+        | map('regex_replace','$','@' ~ (item.realm | default('pam'))) | unique
+        | join(',')
+      }}
+      --role {{ pve_acl_default.role }}
+      --propagate 1
+  register: acl_mod
+  changed_when: acl_mod.rc == 0
+  failed_when: acl_mod.rc not in [0,2]
