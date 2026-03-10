@@ -1,0 +1,22 @@
+- name: Read CSV (users)
+  ansible.builtin.read_csv:
+    path: "{{ users_csv_path }}"
+  register: users_csv
+
+- name: Ensure packages for user management exist
+  ansible.builtin.package:
+    name: [ "passwd", "shadow" ]
+    state: present
+
+- name: Create Linux PAM users on this node
+  ansible.builtin.user:
+    name: "{{ item.username }}"
+    comment: "{{ item.name | default('') }}"
+    #password: "{{ item.password_hash | default(omit) }}"
+    shell: "{{ item.shell | default('/bin/bash') }}"
+    create_home: true
+    state: present
+  loop: "{{ users_csv.list }}"
+  loop_control:
+    label: "{{ item.username }}"
+``
