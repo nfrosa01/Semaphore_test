@@ -1,9 +1,0 @@
-# group_vars/pve.yml
-pve_api_first_node: "pve01"            # run RBAC (pveum) once from here
-pve_acl:
-  enabled: true
-  path: "/pool/AppTeam"                # e.g., "/", "/dc", "/pool/<id>", "/vms/<vmid>", "/storage/<id>"
-  role: "dart_network_remote"                    # or PVEVMAdmin, PVEDatastoreUser, etc.
-pve_pool:
-  name: "Network"
-  ensure_present: true
