@@ -1,0 +1,54 @@
+- name: Read CSV (users)
+  ansible.builtin.read_csv:
+    path: "{{ users_csv_path }}"
+  register: users_csv
+
+- name: Derive groups from CSV + extras
+  ansible.builtin.set_fact:
+    _csv_groups: >-
+      {{
+        users_csv.list
+        | map(attribute='groups')
+        | select('defined')
+        | map('regex_replace','\s+','')
+        | map('split', ',')
+        | flatten
+        | select('length')
+        | unique
+      }}
+    _wanted_groups: "{{ (_csv_groups | default([])) + (pve_groups_extra | default([])) | unique }}"
+
+- name: Ensure PVE groups exist
+  ansible.builtin.command:
+    cmd: "pveum group add {{ item }} --comment 'Created by Ansible'"
+  loop: "{{ _wanted_groups }}"
+  loop_control:
+    label: "{{ item }}"
+  register: add_group
+  changed_when: add_group.rc == 0
+  failed_when: add_group.rc not in [0,2]
+
+- name: Ensure PVE group membership per user
+  ansible.builtin.command:
+    cmd: >-
+      bash -lc '
+      current=$(
+        pveum user list | awk -v u="{{ item.username }}@{{ item.realm }}" "$1==u{print $6}"
+      );
+      new="{{ (item.groups | default("") ) | regex_replace("\s+","") }}";
+      [ -z "$new" ] && exit 0
+      merged=$(python3 - <<PY
+g1=set(filter(None,"$current".split(",")))
+g2=set(filter(None,"$new".split(",")))
+print(",".join(sorted(g1.union(g2))))
+PY
+);
+      pveum user modify {{ item.username }}@{{ item.realm }} --groups "$merged"
+      '
+  loop: "{{ users_csv.list }}"
+  loop_control:
+    label: "{{ item.username }}@{{ item.realm }}"
+  register: mod_groups
+  changed_when: mod_groups.rc == 0
+  failed_when: mod_groups.rc not in [0,2]
+``
