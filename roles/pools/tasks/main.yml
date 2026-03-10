@@ -1,0 +1,9 @@
+- name: Ensure PVE pools exist
+  ansible.builtin.command:
+    cmd: "pveum pool add {{ item.name }} --comment '{{ item.comment | default('Created by Ansible') }}'"
+  loop: "{{ pve_pools | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: pool_add
+  changed_when: pool_add.rc == 0
+  failed_when: pool_add.rc not in [0,2]
