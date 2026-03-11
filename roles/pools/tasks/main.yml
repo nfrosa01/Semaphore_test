@@ -1,5 +1,5 @@
 ---
-# Check each pool and create only if missing — NO zip(), NO advanced lookups
+# Idempotent pool creation without zip() & compatible with Ansible 2.13 (Semaphore)
 
 - name: Check whether PVE pool exists
   ansible.builtin.command:
@@ -9,17 +9,15 @@
     label: "{{ item.name }}"
   register: pool_check
   changed_when: false
-  failed_when: false   # listing missing pools returns non-zero, ignore it
+  failed_when: false   # ignore rc!=0 for missing pools
 
-# Create missing pools — SAFE, IDPOTENT, NO zip()
 - name: Create PVE pool when absent
   ansible.builtin.command:
     cmd: "pveum pool add {{ item.name }} --comment '{{ item.comment | default('Created by Ansible') }}'"
   loop: "{{ pve_pools | default([]) }}"
   loop_control:
     label: "{{ item.name }}"
-  when: >
-    pool_check.results[loop.index0].rc != 0
+  when: pool_check.results[ansible_loop.index0].rc != 0
   register: pool_add
   changed_when: pool_add.rc == 0
   failed_when: pool_add.rc not in [0]
