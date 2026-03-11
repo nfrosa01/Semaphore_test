@@ -16,6 +16,13 @@
     users_csv_list: "{{ users_csv.list }}"
   run_once: true
 
+# ---- PROBE ---------------------------------------------------------
+- name: RBAC probe — about to ensure PVE users
+  debug:
+    msg: "Will ensure RBAC users for: {{ users_csv_list | map(attribute='username') | list }}"
+  run_once: true
+# -------------------------------------------------------------------
+
 # 3) OPTIONAL: Warn if PAM user missing on OS
 - name: Check PAM account exists on OS
   ansible.builtin.command: "getent passwd {{ item.username }}"
