@@ -1,0 +1,34 @@
+---
+# roles/roles/tasks/main.yml
+# Ensure custom PVE roles exist before ACLs are applied.
+
+# Load CSV if needed for later expansions in your workflow
+- name: Read CSV (users) on controller
+  ansible.builtin.read_csv:
+    path: "{{ users_csv_path }}"
+  register: users_csv
+  delegate_to: localhost
+  run_once: true
+
+- name: Share parsed CSV to all hosts
+  ansible.builtin.set_fact:
+    users_csv_list: "{{ users_csv.list }}"
+  run_once: true
+
+# Load list of existing PVE RBAC roles
+- name: List existing PVE roles
+  ansible.builtin.command: "pveum role list"
+  register: current_roles
+  changed_when: false
+
+# Create each custom role if missing
+- name: Ensure custom PVE roles exist
+  ansible.builtin.command: >
+    pveum role add {{ item.name }} --privs "{{ item.privs }}"
+  loop: "{{ pve_custom_roles | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: "'{{ item.name }}' not in (current_roles.stdout | default(''))"
+  register: role_add
+  changed_when: role_add.rc == 0
+  failed_when: role_add.rc not in [0]
