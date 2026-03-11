@@ -7,7 +7,7 @@
 
 - name: Share parsed CSV to all hosts
   ansible.builtin.set_fact:
-    users_csv_list: "{{ users_csv_list }}"
+    users_csv_list: "{{ users_csv.list }}"
   run_once: true
   
 - name: Read CSV (users)
