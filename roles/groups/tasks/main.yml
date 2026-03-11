@@ -1,3 +1,5 @@
+---
+# 1) Read the CSV once on the controller (Semaphore runner), then share to all hosts
 - name: Read CSV (users) on controller
   ansible.builtin.read_csv:
     path: "{{ users_csv_path }}"
@@ -7,27 +9,10 @@
 
 - name: Share parsed CSV to all hosts
   ansible.builtin.set_fact:
-    users_csv_list: "{{ users_csv_list }}"
-  run_once: true
-  
-- name: Read CSV (users) on controller
-  ansible.builtin.read_csv:
-    path: "{{ users_csv_path }}"
-  register: users_csv
-  delegate_to: localhost
+    users_csv_list: "{{ users_csv.list }}"
   run_once: true
 
-- name: Share parsed CSV to all hosts
-  ansible.builtin.set_fact:
-    users_csv_list: "{{ users_csv_list }}"
-  run_once: true
-
-- name: Read CSV (users)
-  ansible.builtin.read_csv:
-    path: "{{ users_csv_path }}"
-  register: users_csv
-
-# Build the desired group list from CSV + extras, normalized and unique
+# 2) Build the desired group list from CSV + extras, normalized and unique
 - name: Derive groups from CSV + extras
   ansible.builtin.set_fact:
     _csv_groups: >-
@@ -35,15 +20,15 @@
         users_csv_list
         | map(attribute='groups')
         | select('defined')
-        | map('regex_replace','\s+','')         # remove spaces
+        | map('regex_replace','\s+','')   # remove spaces
         | map('split', ',')
         | flatten
-        | reject('equalto','')                  # drop empties
+        | reject('equalto','')            # drop empties
         | unique
       }}
     _wanted_groups: "{{ (_csv_groups | default([])) + (pve_groups_extra | default([])) | unique }}"
 
-# Ensure each PVE group exists
+# 3) Ensure each PVE group exists
 - name: Ensure PVE groups exist
   ansible.builtin.command:
     cmd: "pveum group add {{ item }} --comment 'Created by Ansible'"
@@ -51,12 +36,10 @@
   loop_control:
     label: "{{ item }}"
   register: add_group
-  # pveum returns 0 when created; non-zero if already exists; treat both as OK
   changed_when: add_group.rc == 0
   failed_when: add_group.rc not in [0,2]
 
-# For each user, set groups to EXACTLY what CSV says (deterministic + idempotent)
-# 1) Read current groups from 'pveum user list'
+# 4) Read current groups for each user (from pveum user list)
 - name: Get current PVE groups for user
   ansible.builtin.shell: |
     pveum user list | awk -v u="{{ item.username }}@{{ item.realm }}" '$1==u{print $6}'
@@ -68,7 +51,7 @@
   register: current_groups
   changed_when: false
 
-# 2) Compute desired normalized groups for this user from CSV
+# 5) Compute desired normalized groups for each user from CSV
 - name: Compute desired groups for user (normalized CSV)
   ansible.builtin.set_fact:
     _desired_groups: "{{ (item.groups | default('') | regex_replace('\\s+','')) }}"
@@ -77,7 +60,7 @@
     label: "{{ item.username }}@{{ item.realm }}"
   register: desired_groups_calc
 
-# 3) Apply only when different (idempotent)
+# 6) Apply only when different (idempotent)
 - name: Apply PVE group membership when different
   ansible.builtin.command:
     cmd: >-
