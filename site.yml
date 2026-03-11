@@ -13,4 +13,5 @@
     - { role: users,  tasks_from: pve_rbac.yml }
     - { role: groups }
     - { role: pools }
+    - { role: roles }
     - { role: acls }
