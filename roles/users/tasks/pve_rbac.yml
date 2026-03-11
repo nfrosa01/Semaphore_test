@@ -34,14 +34,14 @@
   changed_when: false
 
 # 5) Add PVE user if missing
-- name: Add PVE user (user@realm) if missing
+- name: Add PVE user if missing
   ansible.builtin.command: >
     pveum user add {{ item.username }}@{{ item.realm }}
     --comment "{{ item.name | default('') }}"
   loop: "{{ users_csv_list }}"
   loop_control:
     label: "{{ item.username }}@{{ item.realm }}"
-  when: "'{{ item.username }}@{{ item.realm }}' not in (current_pve_users.stdout | default(''))"
+   when: (current_pve_users.stdout | default('')) is not search(item.username ~ '@' ~ item.realm)
   register: add_user
   changed_when: add_user.rc == 0
   failed_when: add_user.rc not in [0]
