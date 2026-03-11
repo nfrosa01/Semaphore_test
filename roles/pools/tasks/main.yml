@@ -1,9 +1,23 @@
-- name: Ensure PVE pools exist
+---
+# Idempotent pool creation: check first, then add only if missing
+
+- name: Check whether PVE pool exists
   ansible.builtin.command:
-    cmd: "pveum pool add {{ item.name }} --comment '{{ item.comment | default('Created by Ansible') }}'"
+    cmd: "pveum pool list --poolid {{ item.name }}"
   loop: "{{ pve_pools | default([]) }}"
   loop_control:
     label: "{{ item.name }}"
+  register: pool_check
+  changed_when: false
+  failed_when: false   # listing a missing pool returns non-zero; ignore that
+
+- name: Create PVE pool when absent
+  ansible.builtin.command:
+    cmd: "pveum pool add {{ item.0.name }} --comment '{{ item.0.comment | default('Created by Ansible') }}'"
+  loop: "{{ query('zip', pve_pools | default([]), pool_check.results) }}"
+  loop_control:
+    label: "{{ item.0.name }}"
+  when: item.1.rc != 0     # only create when pool is missing
   register: pool_add
   changed_when: pool_add.rc == 0
-  failed_when: pool_add.rc not in [0,2]
+  failed_when: pool_add.rc not in [0]
