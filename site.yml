@@ -7,68 +7,37 @@
   roles:
     - { role: users, tasks_from: pam.yml }
 
-# 2) Create RBAC (Proxmox) users and RBAC structures
-#    This must run ONLY on pve_rbac_node (usually pve01)
+# 2) Create RBAC (Proxmox) users and RBAC structures on a single node
 - name: RBAC — users + groups + pools + roles
   hosts: "{{ pve_rbac_node | default('pve01') }}"
   become: true
   gather_facts: false
-  
-pre_tasks:
-    - name: RBAC preflight — show target and CSV first row
+
+  pre_tasks:
+    - name: RBAC preflight — show target host and pve_rbac_node var
       debug:
         msg:
           rbac_node_inventory_hostname: "{{ inventory_hostname }}"
           pve_rbac_node_var: "{{ pve_rbac_node | default('pve01') }}"
+
     - name: Read CSV (users) on controller (preflight)
       ansible.builtin.read_csv:
         path: "{{ users_csv_path }}"
       register: preflight_users_csv
       delegate_to: localhost
       run_once: true
+
     - name: Show first CSV row (preflight)
       debug:
         var: preflight_users_csv.list[0]
       run_once: true
 
-    # *** IMPORTANT: force real changes beyond this point ***
+    # Ensure this RBAC play performs real changes even if someone starts with --check
     - name: End check mode for all RBAC operations
       ansible.builtin.meta: end_check_mode
 
-
-  # --- PRE-FLIGHT CHECKS (add these lines) ---
-  tasks:
-    - name: Show which host(s) RBAC will run on
-      debug:
-        msg:
-          rbac_node_inventory_hostname: "{{ inventory_hostname }}"
-          pve_rbac_node_var: "{{ pve_rbac_node | default('pve01') }}"
-
-    # assert there is at least one host matched; fail loudly if not
-    - name: Fail if this play matched zero hosts (safety)
-      assert:
-        that:
-          - (groups['all'] | length) > 0  # sanity
-        success_msg: "RBAC play matched at least one host; continuing."
-        fail_msg: "RBAC play matched zero hosts. Check Template 'Limit' and pve_rbac_node variable."
-      run_once: true
-
-    # read CSV on controller to confirm we see user rows in this play
-    - name: Read CSV (users) on controller (preflight)
-      ansible.builtin.read_csv:
-        path: "{{ users_csv_path }}"
-      register: preflight_users_csv
-      delegate_to: localhost
-      run_once: true
-
-    - name: Show first CSV row (preflight)
-      debug:
-        var: preflight_users_csv.list[0]
-      run_once: true
-  # --- END PRE-FLIGHT CHECKS ---
-
   roles:
-    - { role: users,  tasks_from: pve_rbac.yml }   # <-- Creates user@realm in Proxmox (REQUIRED)
-    - { role: groups }                              # <-- Assign PVE groups (must run after RBAC users)
-    - { role: pools }                               # <-- Ensure pools exist
-    - { role: roles }                               # <-- Ensure custom RBAC roles exist
+    - { role: users,  tasks_from: pve_rbac.yml }   # Creates user@realm
+    - { role: groups }                              # Assign PVE groups
+    - { role: pools }                               # Ensure pools exist
+    - { role: roles }                               # Ensure custom RBAC roles exist
