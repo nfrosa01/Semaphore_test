@@ -1,3 +1,5 @@
+---
+# 1) Create PAM (Linux) users on *all* Proxmox nodes
 - name: PAM (Linux) users on all Proxmox nodes
   hosts: pve
   become: true
@@ -5,13 +7,14 @@
   roles:
     - { role: users, tasks_from: pam.yml }
 
+# 2) Create RBAC (Proxmox) users and RBAC structures
+#    This must run ONLY on pve_rbac_node (usually pve01)
 - name: RBAC — users + groups + pools + roles
   hosts: "{{ pve_rbac_node | default('pve01') }}"
   become: true
   gather_facts: false
   roles:
-    - { role: users,  tasks_from: pve_rbac.yml }
-    - { role: groups }
-    - { role: pools }
-    - { role: roles }
-
+    - { role: users,  tasks_from: pve_rbac.yml }   # <-- Creates user@realm in Proxmox (REQUIRED)
+    - { role: groups }                              # <-- Assign PVE groups (must run after RBAC users)
+    - { role: pools }                               # <-- Ensure pools exist
+    - { role: roles }                               # <-- Ensure custom RBAC roles exist
