@@ -13,6 +13,28 @@
   hosts: "{{ pve_rbac_node | default('pve01') }}"
   become: true
   gather_facts: false
+  
+pre_tasks:
+    - name: RBAC preflight — show target and CSV first row
+      debug:
+        msg:
+          rbac_node_inventory_hostname: "{{ inventory_hostname }}"
+          pve_rbac_node_var: "{{ pve_rbac_node | default('pve01') }}"
+    - name: Read CSV (users) on controller (preflight)
+      ansible.builtin.read_csv:
+        path: "{{ users_csv_path }}"
+      register: preflight_users_csv
+      delegate_to: localhost
+      run_once: true
+    - name: Show first CSV row (preflight)
+      debug:
+        var: preflight_users_csv.list[0]
+      run_once: true
+
+    # *** IMPORTANT: force real changes beyond this point ***
+    - name: End check mode for all RBAC operations
+      ansible.builtin.meta: end_check_mode
+
 
   # --- PRE-FLIGHT CHECKS (add these lines) ---
   tasks:
