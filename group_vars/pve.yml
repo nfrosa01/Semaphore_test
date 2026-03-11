@@ -20,6 +20,6 @@ pve_pools:
 pve_groups_extra: []
 
 # Optional: define custom PVE roles (used by roles/roles)
-# pve_custom_roles:
-#   - name: "PowerConsoleOnly"
-#     privs: "VM.Console VM.PowerMgmt VM.Audit"
+pve_custom_roles:
+  - name: "dart_network_remote"
+    privs: "VM.Audit, VM.Config.Options, Sys.Modify, VM.Config.Disk, VM.Console, VM.Config.Network, Pool.Allocate, Pool.Audit"
