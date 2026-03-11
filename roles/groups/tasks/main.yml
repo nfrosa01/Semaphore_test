@@ -1,5 +1,14 @@
----
-# roles/groups/tasks/main.yml
+- name: Read CSV (users) on controller
+  ansible.builtin.read_csv:
+    path: "{{ users_csv_path }}"
+  register: users_csv
+  delegate_to: localhost
+  run_once: true
+
+- name: Share parsed CSV to all hosts
+  ansible.builtin.set_fact:
+    users_csv_list: "{{ users_csv_list }}"
+  run_once: true
 
 - name: Read CSV (users)
   ansible.builtin.read_csv:
@@ -11,7 +20,7 @@
   ansible.builtin.set_fact:
     _csv_groups: >-
       {{
-        users_csv.list
+        users_csv_list
         | map(attribute='groups')
         | select('defined')
         | map('regex_replace','\s+','')         # remove spaces
@@ -41,7 +50,7 @@
     pveum user list | awk -v u="{{ item.username }}@{{ item.realm }}" '$1==u{print $6}'
   args:
     executable: /bin/bash
-  loop: "{{ users_csv.list }}"
+  loop: "{{ users_csv_list }}"
   loop_control:
     label: "{{ item.username }}@{{ item.realm }}"
   register: current_groups
@@ -51,7 +60,7 @@
 - name: Compute desired groups for user (normalized CSV)
   ansible.builtin.set_fact:
     _desired_groups: "{{ (item.groups | default('') | regex_replace('\\s+','')) }}"
-  loop: "{{ users_csv.list }}"
+  loop: "{{ users_csv_list }}"
   loop_control:
     label: "{{ item.username }}@{{ item.realm }}"
   register: desired_groups_calc
@@ -60,12 +69,12 @@
 - name: Apply PVE group membership when different
   ansible.builtin.command:
     cmd: >-
-      pveum user modify {{ users_csv.list[idx].username }}@{{ users_csv.list[idx].realm }}
+      pveum user modify {{ users_csv_list[idx].username }}@{{ users_csv_list[idx].realm }}
       --groups "{{ desired_groups_calc.results[idx]._desired_groups }}"
-  loop: "{{ range(0, users_csv.list | length) | list }}"
+  loop: "{{ range(0, users_csv_list | length) | list }}"
   loop_control:
     index_var: idx
-    label: "{{ users_csv.list[idx].username }}@{{ users_csv.list[idx].realm }}"
+    label: "{{ users_csv_list[idx].username }}@{{ users_csv_list[idx].realm }}"
   register: mod_groups
   when: >
     (current_groups.results[idx].stdout | default('')) !=
