@@ -20,7 +20,6 @@
         users_csv_list
         | map(attribute='groups')
         | select('defined')
-        | map('regex_replace','\\s+','')   # this comment is outside the Jinja expression
         | map('split', ',')
         | flatten
         | reject('equalto','')
