@@ -3,7 +3,7 @@ pve_rbac_node: "pve01"
 
 # CSV with columns:
 # username,realm,enabled,expire,name,groups,password_hash,shell
-users_csv_path: "./files/users.csv"
+users_csv_path: "{{ playbook_dir }}/files/users.csv"
 
 # Default ACL to apply to all CSV users (optional)
 pve_acl_default:
