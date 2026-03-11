@@ -1,8 +1,12 @@
+---
+# roles/groups/tasks/main.yml
+
 - name: Read CSV (users)
   ansible.builtin.read_csv:
     path: "{{ users_csv_path }}"
   register: users_csv
 
+# Build the desired group list from CSV + extras, normalized and unique
 - name: Derive groups from CSV + extras
   ansible.builtin.set_fact:
     _csv_groups: >-
@@ -10,14 +14,15 @@
         users_csv.list
         | map(attribute='groups')
         | select('defined')
-        | map('regex_replace','\s+','')
+        | map('regex_replace','\s+','')         # remove spaces
         | map('split', ',')
         | flatten
-        | select('length')
+        | reject('equalto','')                  # drop empties
         | unique
       }}
     _wanted_groups: "{{ (_csv_groups | default([])) + (pve_groups_extra | default([])) | unique }}"
 
+# Ensure each PVE group exists
 - name: Ensure PVE groups exist
   ansible.builtin.command:
     cmd: "pveum group add {{ item }} --comment 'Created by Ansible'"
@@ -25,30 +30,45 @@
   loop_control:
     label: "{{ item }}"
   register: add_group
+  # pveum returns 0 when created; non-zero if already exists; treat both as OK
   changed_when: add_group.rc == 0
   failed_when: add_group.rc not in [0,2]
 
-- name: Ensure PVE group membership per user
-  ansible.builtin.command:
-    cmd: >-
-      bash -lc '
-      current=$(
-        pveum user list | awk -v u="{{ item.username }}@{{ item.realm }}" "$1==u{print $6}"
-      );
-      new="{{ (item.groups | default("") ) | regex_replace("\s+","") }}";
-      [ -z "$new" ] && exit 0
-      merged=$(python3 - <<PY
-g1=set(filter(None,"$current".split(",")))
-g2=set(filter(None,"$new".split(",")))
-print(",".join(sorted(g1.union(g2))))
-PY
-);
-      pveum user modify {{ item.username }}@{{ item.realm }} --groups "$merged"
-      '
+# For each user, set groups to EXACTLY what CSV says (deterministic + idempotent)
+# 1) Read current groups from 'pveum user list'
+- name: Get current PVE groups for user
+  ansible.builtin.shell: |
+    pveum user list | awk -v u="{{ item.username }}@{{ item.realm }}" '$1==u{print $6}'
+  args:
+    executable: /bin/bash
   loop: "{{ users_csv.list }}"
   loop_control:
     label: "{{ item.username }}@{{ item.realm }}"
+  register: current_groups
+  changed_when: false
+
+# 2) Compute desired normalized groups for this user from CSV
+- name: Compute desired groups for user (normalized CSV)
+  ansible.builtin.set_fact:
+    _desired_groups: "{{ (item.groups | default('') | regex_replace('\\s+','')) }}"
+  loop: "{{ users_csv.list }}"
+  loop_control:
+    label: "{{ item.username }}@{{ item.realm }}"
+  register: desired_groups_calc
+
+# 3) Apply only when different (idempotent)
+- name: Apply PVE group membership when different
+  ansible.builtin.command:
+    cmd: >-
+      pveum user modify {{ users_csv.list[idx].username }}@{{ users_csv.list[idx].realm }}
+      --groups "{{ desired_groups_calc.results[idx]._desired_groups }}"
+  loop: "{{ range(0, users_csv.list | length) | list }}"
+  loop_control:
+    index_var: idx
+    label: "{{ users_csv.list[idx].username }}@{{ users_csv.list[idx].realm }}"
   register: mod_groups
+  when: >
+    (current_groups.results[idx].stdout | default('')) !=
+    (desired_groups_calc.results[idx]._desired_groups | default(''))
   changed_when: mod_groups.rc == 0
   failed_when: mod_groups.rc not in [0,2]
-``
