@@ -1,3 +1,15 @@
+- name: Read CSV (users) on controller
+  ansible.builtin.read_csv:
+    path: "{{ users_csv_path }}"
+  register: users_csv
+  delegate_to: localhost
+  run_once: true
+
+- name: Share parsed CSV to all hosts
+  ansible.builtin.set_fact:
+    users_csv_list: "{{ users_csv_list }}"
+  run_once: true
+  
 - name: Read CSV (users) for RBAC
   ansible.builtin.read_csv:
     path: "{{ users_csv_path }}"
@@ -8,7 +20,7 @@
     cmd: >-
       pveum user add {{ item.username }}@{{ item.realm }}
       --comment "{{ item.name | default('') }}"
-  loop: "{{ users_csv.list }}"
+  loop: "{{ users_csv_list }}"
   loop_control:
     label: "{{ item.username }}@{{ item.realm }}"
   register: add_user
@@ -21,7 +33,7 @@
       pveum user modify {{ item.username }}@{{ item.realm }}
       --enable {{ (item.enabled | default('1')) | int }}
       --expire {{ (item.expire | default('0')) | int }}
-  loop: "{{ users_csv.list }}"
+  loop: "{{ users_csv_list }}"
   loop_control:
     label: "{{ item.username }}@{{ item.realm }}"
   register: mod_user
