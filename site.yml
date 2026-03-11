@@ -5,7 +5,7 @@
   roles:
     - { role: users, tasks_from: pam.yml }
 
-- name: RBAC — users + groups + pools + ACLs
+- name: RBAC — users + groups + pools + roles + ACLs
   hosts: "{{ pve_rbac_node | default('pve01') }}"
   become: true
   gather_facts: false
