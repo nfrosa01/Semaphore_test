@@ -5,12 +5,15 @@
   delegate_to: localhost
   run_once: true
 
-  
-# Make the parsed CSV available to all hosts
 - name: Share parsed CSV to all hosts
   ansible.builtin.set_fact:
     users_csv_list: "{{ users_csv_list }}"
   run_once: true
+  
+- name: Read CSV (users)
+  ansible.builtin.read_csv:
+    path: "{{ users_csv_path }}"
+  register: users_csv
 
 - name: Ensure packages for user management exist
   ansible.builtin.package:
