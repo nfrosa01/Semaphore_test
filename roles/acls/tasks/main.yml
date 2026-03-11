@@ -1,17 +1,26 @@
-- name: Read CSV (users)
+# 1) Read CSV on controller once
+- name: Read CSV (users) on controller
   ansible.builtin.read_csv:
     path: "{{ users_csv_path }}"
   register: users_csv
+  delegate_to: localhost
+  run_once: true
 
-- name: Apply ACL role on path for all CSV users (optional)
+- name: Share parsed CSV to all hosts
+  ansible.builtin.set_fact:
+    users_csv_list: "{{ users_csv.list }}"
+  run_once: true
+
+# 2) Apply ACLs based on CSV (only runs if ACL defaults enabled)
+- name: Apply ACL role on path for all CSV users
   when: pve_acl_default.enabled | default(false)
   ansible.builtin.command:
     cmd: >-
       pveum acl modify {{ pve_acl_default.path }}
       --users {{
-        users_csv.list
+        users_csv_list
         | map(attribute='username')
-        | map('regex_replace','$','@' ~ (item.realm | default('pam'))) | unique
+        | map('regex_replace', '$', '@' ~ (pve_acl_default.realm | default('pam')))
         | join(',')
       }}
       --role {{ pve_acl_default.role }}
