@@ -1,3 +1,8 @@
+---
+# roles/users/tasks/pve_rbac.yml
+# Ensure PVE RBAC users exist for PAM users.
+
+# 1) Read CSV on controller
 - name: Read CSV (users) on controller
   ansible.builtin.read_csv:
     path: "{{ users_csv_path }}"
@@ -5,38 +10,63 @@
   delegate_to: localhost
   run_once: true
 
-- name: Share parsed CSV to all hosts
+# 2) Share parsed CSV with all hosts
+- name: Share parsed CSV with all hosts
   ansible.builtin.set_fact:
     users_csv_list: "{{ users_csv.list }}"
   run_once: true
-  
-- name: Read CSV (users) for RBAC
-  ansible.builtin.read_csv:
-    path: "{{ users_csv_path }}"
-  register: users_csv
 
-- name: Add user to Proxmox RBAC (user@realm) with comment
-  ansible.builtin.command:
-    cmd: >-
-      pveum user add {{ item.username }}@{{ item.realm }}
-      --comment "{{ item.name | default('') }}"
+# 3) OPTIONAL: Warn if PAM user missing on OS
+- name: Check PAM account exists on OS
+  ansible.builtin.command: "getent passwd {{ item.username }}"
+  loop: "{{ users_csv_list }}"
+  loop_control:
+    label: "{{ item.username }}"
+  register: pam_check
+  changed_when: false
+  failed_when: false   # warn only, do not fail
+  when: item.realm == "pam"
+
+# 4) Load current PVE RBAC users
+- name: Load current PVE RBAC user list
+  ansible.builtin.command: "pveum user list"
+  register: current_pve_users
+  changed_when: false
+
+# 5) Add PVE user if missing
+- name: Add PVE user (user@realm) if missing
+  ansible.builtin.command: >
+    pveum user add {{ item.username }}@{{ item.realm }}
+    --comment "{{ item.name | default('') }}"
   loop: "{{ users_csv_list }}"
   loop_control:
     label: "{{ item.username }}@{{ item.realm }}"
+  when: "'{{ item.username }}@{{ item.realm }}' not in (current_pve_users.stdout | default(''))"
   register: add_user
   changed_when: add_user.rc == 0
-  failed_when: add_user.rc not in [0,2]
+  failed_when: add_user.rc not in [0]
 
-- name: Enable/disable + set expiry
-  ansible.builtin.command:
-    cmd: >-
-      pveum user modify {{ item.username }}@{{ item.realm }}
-      --enable {{ (item.enabled | default('1')) | int }}
-      --expire {{ (item.expire | default('0')) | int }}
+# 6) Set enabled/expire values (idempotent)
+- name: Modify PVE user settings (enable/expire)
+  ansible.builtin.command: >
+    pveum user modify {{ item.username }}@{{ item.realm }}
+    --enable {{ (item.enabled | default('1')) | int }}
+    --expire {{ (item.expire | default('0')) | int }}
   loop: "{{ users_csv_list }}"
   loop_control:
     label: "{{ item.username }}@{{ item.realm }}"
   register: mod_user
   changed_when: mod_user.rc == 0
   failed_when: mod_user.rc not in [0,2]
-``
+
+# 7) OPTIONAL: Set user's display name (idempotent)
+- name: Update PVE user comment
+  ansible.builtin.command: >
+    pveum user modify {{ item.username }}@{{ item.realm }}
+    --comment "{{ item.name }}"
+  loop: "{{ users_csv_list }}"
+  loop_control:
+    label: "{{ item.username }}@{{ item.realm }}"
+  register: mod_comment
+  changed_when: mod_comment.rc == 0
+  failed_when: mod_comment.rc not in [0,2]
