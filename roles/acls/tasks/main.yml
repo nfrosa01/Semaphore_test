@@ -1,4 +1,7 @@
-# 1) Read CSV on controller once
+---
+# roles/acls/tasks/main.yml
+# Purpose: Apply ACL role per user at a path, but only if needed.
+
 - name: Read CSV (users) on controller
   ansible.builtin.read_csv:
     path: "{{ users_csv_path }}"
@@ -6,34 +9,57 @@
   delegate_to: localhost
   run_once: true
 
-- name: Share parsed CSV to all hosts
+- name: Share parsed CSV with all hosts
   ansible.builtin.set_fact:
     users_csv_list: "{{ users_csv.list }}"
   run_once: true
 
-  
-- name: Get current ACLs at path
-  ansible.builtin.command: "pveum acl list --path {{ pve_acl_default.path }}"
-  register: acl_list
+- name: List current PVE users
+  ansible.builtin.command: "pveum user list"
+  register: pve_users_list
   changed_when: false
 
+# IMPORTANT: `pveum acl list` does NOT support --path, so fetch all and filter
+- name: Get full ACL table
+  ansible.builtin.command: "pveum acl list"
+  register: acl_table
+  changed_when: false
 
-# Apply ACL to each user only if:
-# 1) user exists in PVE AND
-# 2) acl_list does not already contain "user@realm <spaces> role"
-- name: Apply ACL role per user if missing
-  ansible.builtin.command: >
-    pveum acl modify {{ pve_acl_default.path }}
-    --users {{ item.username }}@{{ item.realm }}
-    --role {{ pve_acl_default.role }}
-    --propagate 1
+# For each CSV user, decide if an ACL is missing for our path+role
+# We consider a match when the same 'user@realm' appears on the same path with the same role.
+- name: Compute missing ACLs (per user)
+  ansible.builtin.set_fact:
+    _need_acl_apply: >-
+      {{
+        not (
+          (acl_table.stdout | default('')) is search(
+            '(^|\\n)\\s*' ~ (pve_acl_default.path | regex_escape) ~
+            '\\s+\\S*\\s+' ~ (item.username ~ '@' ~ item.realm | regex_escape) ~
+            '\\s+\\S*\\s+' ~ (pve_acl_default.role | regex_escape) ~ '(\\s|$)'
+          )
+        )
+      }}
   loop: "{{ users_csv_list }}"
   loop_control:
     label: "{{ item.username }}@{{ item.realm }}"
+  register: user_acl_decisions
+  changed_when: false
+
+# Apply ACL for each user if:
+# 1) the user exists in PVE
+# 2) the ACL for (path, user, role) was not found above
+- name: Apply ACL role per user if missing
+  ansible.builtin.command: >
+    pveum acl modify {{ pve_acl_default.path }}
+    --users {{ item.0.username }}@{{ item.0.realm }}
+    --role {{ pve_acl_default.role }}
+    --propagate 1
+  loop: "{{ users_csv_list | zip(user_acl_decisions.results) | list }}"
+  loop_control:
+    label: "{{ item.0.username }}@{{ item.0.realm }}"
   when: >
-    (pve_users_list.stdout | default('')) is search('{{ item.username }}@{{ item.realm }}')
-    and not (acl_list.stdout | default('')) is search('{{ item.username }}@{{ item.realm }}\\s+{{ pve_acl_default.role }}')
+    (pve_users_list.stdout | default('')) is search('{{ item.0.username }}@{{ item.0.realm }}')
+    and (item.1.ansible_facts._need_acl_apply | bool)
   register: acl_apply
   changed_when: acl_apply.rc == 0
   failed_when: acl_apply.rc not in [0]
-
