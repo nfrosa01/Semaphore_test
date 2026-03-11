@@ -20,10 +20,10 @@
         users_csv_list
         | map(attribute='groups')
         | select('defined')
-        | map('regex_replace','\s+','')   # remove spaces
+        | map('regex_replace','\\s+','')   # this comment is outside the Jinja expression
         | map('split', ',')
         | flatten
-        | reject('equalto','')            # drop empties
+        | reject('equalto','')
         | unique
       }}
     _wanted_groups: "{{ (_csv_groups | default([])) + (pve_groups_extra | default([])) | unique }}"
