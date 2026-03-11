@@ -1,6 +1,5 @@
 ---
-# Idempotent pool creation without zip() & compatible with Ansible 2.13 (Semaphore)
-
+# 1) Check whether each pool exists
 - name: Check whether PVE pool exists
   ansible.builtin.command:
     cmd: "pveum pool list --poolid {{ item.name }}"
@@ -9,15 +8,22 @@
     label: "{{ item.name }}"
   register: pool_check
   changed_when: false
-  failed_when: false   # ignore rc!=0 for missing pools
+  failed_when: false   # missing pool = rc != 0 but NOT a failure
 
+# 2) Combine pools + check results into one paired list
+- name: Build paired pool/check list
+  ansible.builtin.set_fact:
+    pool_pairs: "{{ pool_pairs | default([]) + [ {'pool': item, 'check': pool_check.results[loop.index0]} ] }}"
+  loop: "{{ pve_pools | default([]) }}"
+
+# 3) Create pools only when missing — NO indexing inside when
 - name: Create PVE pool when absent
   ansible.builtin.command:
-    cmd: "pveum pool add {{ item.name }} --comment '{{ item.comment | default('Created by Ansible') }}'"
-  loop: "{{ pve_pools | default([]) }}"
+    cmd: "pveum pool add {{ item.pool.name }} --comment '{{ item.pool.comment | default('Created by Ansible') }}'"
+  loop: "{{ pool_pairs | default([]) }}"
   loop_control:
-    label: "{{ item.name }}"
-  when: pool_check.results[ansible_loop.index0].rc != 0
+    label: "{{ item.pool.name }}"
+  when: item.check.rc != 0     # SAFE — no indexing required
   register: pool_add
   changed_when: pool_add.rc == 0
   failed_when: pool_add.rc not in [0]
