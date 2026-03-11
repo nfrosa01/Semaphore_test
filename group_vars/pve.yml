@@ -8,12 +8,12 @@ users_csv_path: "./files/users.csv"
 # Default ACL to apply to all CSV users (optional)
 pve_acl_default:
   enabled: true
-  path: "/pool/AppTeam"     # "/", "/dc", "/pool/<id>", "/vms/<vmid>", "/storage/<id>"
-  role: "PVEVMUser"
+  path: "/pool/Network"     # "/", "/dc", "/pool/<id>", "/vms/<vmid>", "/storage/<id>"
+  role: "dart_network_remote"
 
 # Pools to ensure exist (optional)
 pve_pools:
-  - name: "AppTeam"
+  - name: "Network"
     comment: "Created by Ansible"
 
 # Additional PVE groups to create (optional)
