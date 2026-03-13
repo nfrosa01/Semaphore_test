@@ -35,8 +35,8 @@
       run_once: true
 
     # Ensure this RBAC play performs real changes even if someone starts with --check
-    - name: End check mode for all RBAC operations
-      ansible.builtin.meta: end_check_mode
+    #- name: End check mode for all RBAC operations
+     # ansible.builtin.meta: end_check_mode
 
   roles:
     - { role: users,  tasks_from: pve_rbac.yml }   # Creates user@realm
