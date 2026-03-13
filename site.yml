@@ -7,11 +7,13 @@
   roles:
     - { role: users, tasks_from: pam.yml }
 
-# 2) Create RBAC (Proxmox) users and RBAC structures on a single node
-- name: RBAC — users + groups + pools + roles
+
+# 2) Create RBAC (Proxmox) users and attributes on a single node
+- name: RBAC — create Proxmox users from CSV
   hosts: "{{ pve_rbac_node | default('pve01') }}"
   become: true
   gather_facts: false
+
 
   pre_tasks:
     - name: RBAC preflight — show target host and pve_rbac_node var
@@ -38,6 +40,6 @@
 
   roles:
     - { role: users,  tasks_from: pve_rbac.yml }   # Creates user@realm
-    - { role: groups }                              # Assign PVE groups
-    - { role: pools }                               # Ensure pools exist
-    - { role: roles }                               # Ensure custom RBAC roles exist
+    #- { role: groups }                              # Assign PVE groups
+    #- { role: pools }                               # Ensure pools exist
+    #- { role: roles }                               # Ensure custom RBAC roles exist
