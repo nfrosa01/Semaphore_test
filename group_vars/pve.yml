@@ -6,20 +6,20 @@ pve_rbac_node: "pve01"
 users_csv_path: "{{ playbook_dir }}/files/users.csv"
 
 # Default ACL to apply to all CSV users (optional)
-pve_acl_default:
-  enabled: true
-  path: "/pool/Network"     # "/", "/dc", "/pool/<id>", "/vms/<vmid>", "/storage/<id>"
-  role: "dart_network_remote"
+#pve_acl_default:
+#  enabled: true
+#  path: "/pool/Network"     # "/", "/dc", "/pool/<id>", "/vms/<vmid>", "/storage/<id>"
+#  role: "dart_network_remote"
 
 # Pools to ensure exist (optional)
-pve_pools:
-  - name: "Network"
-    comment: "Created by Ansible"
+#pve_pools:
+#  - name: "Network"
+#    comment: "Created by Ansible"
 
 # Additional PVE groups to create (optional)
-pve_groups_extra: []
+#pve_groups_extra: []
 
 # Optional: define custom PVE roles (used by roles/roles)
-pve_custom_roles:
-  - name: "dart_network_remote"
-    privs: "VM.Audit, VM.Config.Options, Sys.Modify, VM.Config.Disk, VM.Console, VM.Config.Network, Pool.Allocate, Pool.Audit"
+#pve_custom_roles:
+#  - name: "dart_network_remote"
+#    privs: "VM.Audit, VM.Config.Options, Sys.Modify, VM.Config.Disk, VM.Console, VM.Config.Network, Pool.Allocate, Pool.Audit"
