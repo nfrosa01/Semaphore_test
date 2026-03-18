@@ -2,6 +2,10 @@
 # roles/groups/tasks/main.yml
 # Purpose: Ensure PVE RBAC groups exist (if you want) and update group membership for LDAP-backed users.
 
+- name: MARKER — you are executing roles/groups/tasks/group_membership.yml
+  debug:
+    msg: "Running main.yml"
+
 # NOTE:
 # - This role expects 'users_csv_list' to be set (you already do this in site.yml pre_tasks).
 # - CSV schema: username, realm, groups  (groups can be comma-separated)
