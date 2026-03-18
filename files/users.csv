@@ -1,2 +1,2 @@
-username,realm,enabled,expire,name,password_hash,shell
-sa2345,pam,1,0,Mike Duniganas,,/bin/bash
+username,realm,group
+sa927432,Dart,u_rba_it_operations_sa
