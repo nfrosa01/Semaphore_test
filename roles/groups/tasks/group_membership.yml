@@ -1,62 +1,110 @@
 ---
-# roles/groups/tasks/group_membership.yml
+# roles/groups/tasks/(main|group_membership).yml
+# Purpose: Ensure PVE RBAC groups exist (optional) and update membership for LDAP-backed users.
+# Assumptions:
+# - 'users_csv_list' is already set by a pre_task in site.yml
+# - CSV schema: username, realm, groups (groups can be comma-separated)
 
-- name: MARKER — you are executing roles/groups/tasks/group_membership.yml
+# MARKER: shows which physical file ran in the job log (Ansible prints the real file path).
+- name: MARKER — unified groups membership task file is executing
   debug:
-    msg: "Running group_membership.yml"
+    msg:
+      - "Running unified groups membership logic"
+      - "If line numbers still show main.yml, it means this file is main.yml; if group_membership.yml, likewise."
 
-# users_csv_list already loaded by pre_tasks
-
-# 1) Build list of desired PVE groups from CSV
-- name: Build list of desired PVE groups
+# (Optional) derive PVE group names from CSV (enable creation block if you want auto-create)
+- name: Derive groups from CSV
   ansible.builtin.set_fact:
-    desired_pve_groups: >-
+    _csv_groups: >-
       {{
         users_csv_list
         | map(attribute='groups')
-        | map('regex_replace', '\\s+', '')
-        | map('split', ',')
+        | select('defined')
+        | map('regex_replace','\\s+','')  # strip spaces
+        | map('split', ',')               # split comma lists
         | flatten
-        | reject('equalto', '')
+        | reject('equalto','')            # drop empty
         | unique
       }}
   run_once: true
 
-# 2) Ensure PVE groups exist
-- name: Ensure PVE groups exist
-  ansible.builtin.command: "pveum group add {{ item }} --comment 'Created by Ansible'"
-  loop: "{{ desired_pve_groups }}"
-  loop_control:
-    label: "{{ item }}"
-  register: group_add
-  changed_when: group_add.rc == 0
-  failed_when: >
-    (group_add.rc != 0) and 
-    ('already exists' not in (group_add.stderr | default('')))
-  tags:
-    - pve_groups
+# --- OPTIONAL: uncomment to auto-create PVE groups from CSV before assignment ---
+# - name: Ensure PVE groups exist
+#   ansible.builtin.command: "pveum group add {{ item }} --comment 'Created by Ansible'"
+#   loop: "{{ _csv_groups }}"
+#   loop_control:
+#     label: "{{ item }}"
+#   register: group_add
+#   changed_when: group_add.rc == 0
+#   failed_when: >
+#     (group_add.rc != 0)
+#     and ('already exists' not in (group_add.stderr | default('')))
+# -------------------------------------------------------------------------------
 
-# 3) Get current user list from Proxmox
-- name: Load current PVE user list
+# Load the full PVE user table once (used to validate user existence & realm spelling)
+- name: Load current PVE user table
   ansible.builtin.command: "pveum user list"
-  register: pve_users
+  register: pve_users_table
   changed_when: false
-  tags:
-    - user_groups
 
-# 4) Assign PVE group membership to LDAP users
-- name: Update group membership for each LDAP user
-  ansible.builtin.command: >
-    pveum user modify {{ item.username }}@{{ item.realm }}
-    --groups "{{ item.groups | regex_replace('\\s+', '') }}"
+# Read current groups for each user in CSV (exact match on userid@realm)
+- name: Get current PVE groups for each user
+  ansible.builtin.shell: |
+    set -o pipefail
+    pveum user list | awk -v u="{{ item.username }}@{{ item.realm }}" '$1==u{print $6}'
+  args:
+    executable: /bin/bash
   loop: "{{ users_csv_list }}"
   loop_control:
     label: "{{ item.username }}@{{ item.realm }}"
-  # Only run if user exists in PVE user list
+  register: current_groups
+  changed_when: false
+
+# Compute desired groups string per-row (normalized from CSV ‘groups’ column)
+- name: Compute desired groups list per user (normalized CSV)
+  ansible.builtin.set_fact:
+    _desired_groups_list: >-
+      {{
+        users_csv_list
+        | map(attribute='groups')
+        | map('regex_replace','\\s+','')  # remove spaces
+        | list
+      }}
+  run_once: true
+
+# DEBUG summary so you can see exactly why the modify will run/skip
+- name: DEBUG | current vs desired (per user)
+  ansible.builtin.debug:
+    msg:
+      user: "{{ users_csv_list[idx].username }}@{{ users_csv_list[idx].realm }}"
+      exists_in_pve: "{{ (pve_users_table.stdout | default('')) is search(users_csv_list[idx].username ~ '@' ~ users_csv_list[idx].realm) }}"
+      current_groups: "{{ (current_groups.results[idx].stdout | default('')) }}"
+      desired_groups: "{{ _desired_groups_list[idx] | default('') }}"
+      will_run_modify: >-
+        {{
+          ((pve_users_table.stdout | default('')) is search(users_csv_list[idx].username ~ '@' ~ users_csv_list[idx].realm))
+          and
+          ((current_groups.results[idx].stdout | default('')) != (_desired_groups_list[idx] | default('')))
+        }}
+  loop: "{{ range(0, users_csv_list | length) | list }}"
+  loop_control:
+    index_var: idx
+
+# Apply membership only if user exists and current != desired
+- name: Apply PVE group membership when different
+  ansible.builtin.command: >
+    pveum user modify {{ users_csv_list[idx].username }}@{{ users_csv_list[idx].realm }}
+    --groups "{{ _desired_groups_list[idx] }}"
+  loop: "{{ range(0, users_csv_list | length) | list }}"
+  loop_control:
+    index_var: idx
+    label: "{{ users_csv_list[idx].username }}@{{ users_csv_list[idx].realm }}"
   when: >
-    (pve_users.stdout | default('')) is search(item.username ~ '@' ~ item.realm)
+    (pve_users_table.stdout | default('')) is search(users_csv_list[idx].username ~ '@' ~ users_csv_list[idx].realm)
+    and
+    (current_groups.results[idx].stdout | default('')) != (_desired_groups_list[idx] | default(''))
   register: mod_membership
   changed_when: mod_membership.rc == 0
   failed_when: mod_membership.rc not in [0, 2]
-  tags:
-    - user_groups
+  # If you want it to run even when someone toggles --check:
+  # check_mode: no
