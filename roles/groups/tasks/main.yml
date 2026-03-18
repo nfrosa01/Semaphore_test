@@ -1,35 +1,34 @@
 ---
-# roles/groups/tasks/main.yml
-# Purpose: Ensure PVE RBAC groups exist (if you want) and update group membership for LDAP-backed users.
+# roles/groups/tasks/(main|group_membership).yml
+# Purpose: Ensure PVE RBAC groups exist (optional) and update membership for LDAP-backed users.
+# Assumptions:
+# - 'users_csv_list' is already set by a pre_task in site.yml
+# - CSV schema: username, realm, groups (groups can be comma-separated)
 
-- name: MARKER — you are executing roles/groups/tasks/group_membership.yml
+# MARKER: shows which physical file ran in the job log (Ansible prints the real file path).
+- name: MARKER — unified groups membership task file is executing
   debug:
-    msg: "Running main.yml"
+    msg:
+      - "Running unified groups membership logic"
+      - "If line numbers still show main.yml, it means this file is main.yml; if group_membership.yml, likewise."
 
-# NOTE:
-# - This role expects 'users_csv_list' to be set (you already do this in site.yml pre_tasks).
-# - CSV schema: username, realm, groups  (groups can be comma-separated)
-# - Example row: sa927362,Dart,u_rba_it_operations_sa
-
-# (Optional) Ensure groups exist – enable this block if you also want to create groups from CSV
-# Derive group names from the CSV 'groups' column
-- name: Derive groups from CSV + extras
+# (Optional) derive PVE group names from CSV (enable creation block if you want auto-create)
+- name: Derive groups from CSV
   ansible.builtin.set_fact:
     _csv_groups: >-
       {{
         users_csv_list
         | map(attribute='groups')
         | select('defined')
-        | map('regex_replace','\\s+','')
-        | map('split', ',')
+        | map('regex_replace','\\s+','')  # strip spaces
+        | map('split', ',')               # split comma lists
         | flatten
-        | reject('equalto','')
+        | reject('equalto','')            # drop empty
         | unique
       }}
-    _wanted_groups: "{{ [] }}"   # set to _csv_groups if you want automatic creation
   run_once: true
 
-# Uncomment this task if you want to auto-create groups from CSV:
+# --- OPTIONAL: uncomment to auto-create PVE groups from CSV before assignment ---
 # - name: Ensure PVE groups exist
 #   ansible.builtin.command: "pveum group add {{ item }} --comment 'Created by Ansible'"
 #   loop: "{{ _csv_groups }}"
@@ -38,17 +37,18 @@
 #   register: group_add
 #   changed_when: group_add.rc == 0
 #   failed_when: >
-#     (group_add.rc != 0) and
-#     ('already exists' not in (group_add.stderr | default('')))
+#     (group_add.rc != 0)
+#     and ('already exists' not in (group_add.stderr | default('')))
+# -------------------------------------------------------------------------------
 
-# Load complete user table once – we’ll use this to test user existence and realm spelling
+# Load the full PVE user table once (used to validate user existence & realm spelling)
 - name: Load current PVE user table
   ansible.builtin.command: "pveum user list"
   register: pve_users_table
   changed_when: false
 
 # Read current groups for each user in CSV (exact match on userid@realm)
-- name: Get current PVE groups for user
+- name: Get current PVE groups for each user
   ansible.builtin.shell: |
     set -o pipefail
     pveum user list | awk -v u="{{ item.username }}@{{ item.realm }}" '$1==u{print $6}'
@@ -60,19 +60,19 @@
   register: current_groups
   changed_when: false
 
-# Compute desired groups per user (normalized from CSV ‘groups’ column)
-- name: Compute desired groups for user (normalized CSV)
+# Compute desired groups string per-row (normalized from CSV ‘groups’ column)
+- name: Compute desired groups list per user (normalized CSV)
   ansible.builtin.set_fact:
     _desired_groups_list: >-
       {{
         users_csv_list
         | map(attribute='groups')
-        | map('regex_replace','\\s+','')   # remove spaces
+        | map('regex_replace','\\s+','')  # remove spaces
         | list
       }}
   run_once: true
 
-# Show evaluation so we can see exactly why it would run or skip
+# DEBUG summary so you can see exactly why the modify will run/skip
 - name: DEBUG | current vs desired (per user)
   ansible.builtin.debug:
     msg:
@@ -80,8 +80,12 @@
       exists_in_pve: "{{ (pve_users_table.stdout | default('')) is search(users_csv_list[idx].username ~ '@' ~ users_csv_list[idx].realm) }}"
       current_groups: "{{ (current_groups.results[idx].stdout | default('')) }}"
       desired_groups: "{{ _desired_groups_list[idx] | default('') }}"
-      will_run_modify: "{{ ((pve_users_table.stdout | default('')) is search(users_csv_list[idx].username ~ '@' ~ users_csv_list[idx].realm))
-                          and ((current_groups.results[idx].stdout | default('')) != (_desired_groups_list[idx] | default(''))) }}"
+      will_run_modify: >-
+        {{
+          ((pve_users_table.stdout | default('')) is search(users_csv_list[idx].username ~ '@' ~ users_csv_list[idx].realm))
+          and
+          ((current_groups.results[idx].stdout | default('')) != (_desired_groups_list[idx] | default('')))
+        }}
   loop: "{{ range(0, users_csv_list | length) | list }}"
   loop_control:
     index_var: idx
