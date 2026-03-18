@@ -1,6 +1,10 @@
 ---
 # roles/groups/tasks/group_membership.yml
 
+- name: MARKER — you are executing roles/groups/tasks/group_membership.yml
+  debug:
+    msg: "Running group_membership.yml"
+
 # users_csv_list already loaded by pre_tasks
 
 # 1) Build list of desired PVE groups from CSV
