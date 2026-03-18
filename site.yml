@@ -26,4 +26,4 @@
       run_once: true
 
   roles:
-    - { role: groups, tasks_from: main.yml }
+    - { role: groups, tasks_from: group_membership.yml }
