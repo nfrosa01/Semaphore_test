@@ -1,45 +1,29 @@
 ---
-# 1) Create PAM (Linux) users on *all* Proxmox nodes
-- name: PAM (Linux) users on all Proxmox nodes
-  hosts: pve
-  become: true
-  gather_facts: false
-  roles:
-    - { role: users, tasks_from: pam.yml }
+# Update Proxmox group membership for LDAP users
 
-
-# 2) Create RBAC (Proxmox) users and attributes on a single node
-- name: RBAC — create Proxmox users from CSV
+- name: Update PVE Groups for LDAP Users
   hosts: "{{ pve_rbac_node | default('pve01') }}"
   become: true
   gather_facts: false
 
-
   pre_tasks:
-    - name: RBAC preflight — show target host and pve_rbac_node var
+    - name: Preflight — show node
       debug:
-        msg:
+        msg: 
           rbac_node_inventory_hostname: "{{ inventory_hostname }}"
           pve_rbac_node_var: "{{ pve_rbac_node | default('pve01') }}"
 
-    - name: Read CSV (users) on controller (preflight)
+    - name: Read CSV (users) on controller
       ansible.builtin.read_csv:
         path: "{{ users_csv_path }}"
-      register: preflight_users_csv
+      register: users_csv
       delegate_to: localhost
       run_once: true
 
-    - name: Show first CSV row (preflight)
+    - name: Show first CSV row
       debug:
-        var: preflight_users_csv.list[0]
+        var: users_csv.list[0]
       run_once: true
 
-    # Ensure this RBAC play performs real changes even if someone starts with --check
-    #- name: End check mode for all RBAC operations
-     # ansible.builtin.meta: end_check_mode
-
   roles:
-    - { role: users,  tasks_from: pve_rbac.yml }   # Creates user@realm
-    #- { role: groups }                              # Assign PVE groups
-    #- { role: pools }                               # Ensure pools exist
-    #- { role: roles }                               # Ensure custom RBAC roles exist
+    - { role: groups, tasks_from: group_membership.yml }
