@@ -1,0 +1,58 @@
+---
+# roles/groups/tasks/group_membership.yml
+
+# users_csv_list already loaded by pre_tasks
+
+# 1) Build list of desired PVE groups from CSV
+- name: Build list of desired PVE groups
+  ansible.builtin.set_fact:
+    desired_pve_groups: >-
+      {{
+        users_csv_list
+        | map(attribute='groups')
+        | map('regex_replace', '\\s+', '')
+        | map('split', ',')
+        | flatten
+        | reject('equalto', '')
+        | unique
+      }}
+  run_once: true
+
+# 2) Ensure PVE groups exist
+- name: Ensure PVE groups exist
+  ansible.builtin.command: "pveum group add {{ item }} --comment 'Created by Ansible'"
+  loop: "{{ desired_pve_groups }}"
+  loop_control:
+    label: "{{ item }}"
+  register: group_add
+  changed_when: group_add.rc == 0
+  failed_when: >
+    (group_add.rc != 0) and 
+    ('already exists' not in (group_add.stderr | default('')))
+  tags:
+    - pve_groups
+
+# 3) Get current user list from Proxmox
+- name: Load current PVE user list
+  ansible.builtin.command: "pveum user list"
+  register: pve_users
+  changed_when: false
+  tags:
+    - user_groups
+
+# 4) Assign PVE group membership to LDAP users
+- name: Update group membership for each LDAP user
+  ansible.builtin.command: >
+    pveum user modify {{ item.username }}@{{ item.realm }}
+    --groups "{{ item.groups | regex_replace('\\s+', '') }}"
+  loop: "{{ users_csv_list }}"
+  loop_control:
+    label: "{{ item.username }}@{{ item.realm }}"
+  # Only run if user exists in PVE user list
+  when: >
+    (pve_users.stdout | default('')) is search(item.username ~ '@' ~ item.realm)
+  register: mod_membership
+  changed_when: mod_membership.rc == 0
+  failed_when: mod_membership.rc not in [0, 2]
+  tags:
+    - user_groups
